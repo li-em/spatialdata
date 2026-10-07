@@ -8,6 +8,7 @@ import zarr
 from upath import UPath
 from zarr.storage import FsspecStore, LocalStore, MemoryStore
 
+import spatialdata._store
 from spatialdata import SpatialData
 from spatialdata._io._utils import _resolve_zarr_store
 from spatialdata._store import (
@@ -172,3 +173,45 @@ def test_write_to_memory_store_raises() -> None:
     sdata = SpatialData()
     with pytest.raises(NotImplementedError, match="does not expose a filesystem path"):
         sdata.write(MemoryStore())
+
+
+def test_parquet_fs_fallback_is_called_for_a_store_without_a_filesystem() -> None:
+    """The fallback supplies the filesystem that `parquet_fs_and_path` cannot derive from the store."""
+    root = zarr.create_group(store=MemoryStore(), zarr_format=3)
+    group = root.require_group("points").require_group("p1")
+    sentinel = object()
+
+    with pytest.raises(ValueError, match="Cannot derive a filesystem"):
+        parquet_fs_and_path(group, "points.parquet")
+
+    def fallback(store, resolved_group, child):
+        assert isinstance(store, MemoryStore)
+        return sentinel, f"{resolved_group.path}/{child}"
+
+    spatialdata._store.parquet_fs_fallback = fallback
+    try:
+        fs, path = parquet_fs_and_path(group, "points.parquet")
+        assert fs is sentinel
+        assert path == "points/p1/points.parquet"
+    finally:
+        spatialdata._store.parquet_fs_fallback = None
+
+    with pytest.raises(ValueError, match="Cannot derive a filesystem"):
+        parquet_fs_and_path(group, "points.parquet")
+
+
+def test_parquet_fs_fallback_is_not_called_for_a_local_store(tmp_path: Path) -> None:
+    """A fallback does not replace the filesystem `parquet_fs_and_path` derives for a local store."""
+
+    def fallback(store, group, child):
+        raise AssertionError(f"fallback called for {type(store).__name__}")
+
+    spatialdata._store.parquet_fs_fallback = fallback
+    try:
+        with open_write_store(tmp_path / "store.zarr") as store:
+            root = zarr.create_group(store=store, overwrite=True)
+            group = root.require_group("points").require_group("p1")
+            fs, path = parquet_fs_and_path(group, "points.parquet")
+            assert path == str(tmp_path / "store.zarr" / "points" / "p1" / "points.parquet")
+    finally:
+        spatialdata._store.parquet_fs_fallback = None

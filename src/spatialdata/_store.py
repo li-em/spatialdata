@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, TypeAlias
@@ -9,6 +10,10 @@ from upath import UPath
 from zarr.storage import FsspecStore, LocalStore
 
 PathLike: TypeAlias = Path | UPath
+
+#: :func:`parquet_fs_and_path` calls this as ``parquet_fs_fallback(store, group, child)`` for a
+#: store without a filesystem path. It returns an ``(fsspec_filesystem, path)`` pair or ``None``.
+parquet_fs_fallback: Callable[[Any, zarr.Group, str], tuple[Any, str] | None] | None = None
 
 
 def normalize_path(path: str | PathLike, storage_options: dict[str, Any] | None = None) -> PathLike:
@@ -106,6 +111,9 @@ def parquet_fs_and_path(group: zarr.Group, *child_parts: str) -> tuple[Any, str]
             fs = inner
         sub = f"{group.path}/{child}" if child else group.path
         return fs, join_fsspec_store_path(store.path, sub)
+
+    if parquet_fs_fallback is not None and (resolved := parquet_fs_fallback(store, group, child)) is not None:
+        return resolved
 
     raise ValueError(f"Cannot derive a filesystem for store of type {type(store).__name__}")
 
