@@ -165,9 +165,14 @@ def open_zarr_for_read(store: Any, *, as_group: bool = True) -> Any:
 
 
 @contextmanager
-def open_write_store(path: PathLike) -> Any:
+def open_write_store(path: PathLike | zarr.abc.store.Store) -> Any:
     """Open *path* as a writable zarr backend store (``read_only=False``)."""
     from spatialdata._io._utils import _resolve_zarr_store
+
+    # Yield a store passed in as is. The caller owns it and closes it.
+    if isinstance(path, zarr.abc.store.Store):
+        yield path
+        return
 
     resolved_store = _resolve_zarr_store(path, read_only=False)
     try:

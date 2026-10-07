@@ -169,11 +169,23 @@ def test_write_and_read_via_local_store(points: SpatialData, tmp_path: Path) -> 
     assert_spatial_data_objects_are_identical(points, read)
 
 
-def test_write_to_memory_store_raises() -> None:
-    """A store with no filesystem path (MemoryStore) is rejected with a clear error."""
-    sdata = SpatialData()
-    with pytest.raises(NotImplementedError, match="does not expose a filesystem path"):
-        sdata.write(MemoryStore())
+def test_write_to_memory_store_round_trips(images: SpatialData) -> None:
+    """`write()` writes to a store with no filesystem path directly, and `read_zarr` reads it back."""
+    store = MemoryStore()
+    images.write(store)
+
+    read = SpatialData.read(store)
+    assert_spatial_data_objects_are_identical(images, read)
+
+
+def test_write_to_memory_store_does_not_set_a_path(images: SpatialData, tmp_path: Path) -> None:
+    """`sdata.path` stays `None` after such a write, and a later write to a path still sets it."""
+    images.write(MemoryStore())
+    assert images.path is None
+
+    path = tmp_path / "after.zarr"
+    images.write(path)
+    assert images.path == path
 
 
 def test_parquet_fs_fallback_is_called_for_a_store_without_a_filesystem() -> None:

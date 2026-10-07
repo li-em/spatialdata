@@ -278,7 +278,7 @@ def read_zarr(
 
 
 def _get_groups_for_element(
-    zarr_path: Path | UPath, element_type: str, element_name: str, use_consolidated: bool = True
+    zarr_path: Path | UPath | zarr.abc.store.Store, element_type: str, element_name: str, use_consolidated: bool = True
 ) -> tuple[zarr.Group, zarr.Group, zarr.Group]:
     """
     Get the Zarr groups for the root, element_type and element for a specific element.
@@ -307,8 +307,8 @@ def _get_groups_for_element(
     -------
     The Zarr groups for the root, element_type and element for a specific element.
     """
-    if not isinstance(zarr_path, (Path, UPath)):
-        raise ValueError("zarr_path should be a Path or UPath object")
+    if not isinstance(zarr_path, (Path, UPath, zarr.abc.store.Store)):
+        raise ValueError("zarr_path should be a Path, UPath or zarr store")
 
     if element_type not in [
         "images",

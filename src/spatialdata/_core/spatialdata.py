@@ -1035,7 +1035,7 @@ class SpatialData:
 
     def _validate_can_safely_write_to_path(
         self,
-        file_path: str | Path | UPath,
+        file_path: str | Path | UPath | zarr.abc.store.Store,
         overwrite: bool = False,
         saving_an_element: bool = False,
     ) -> None:
@@ -1055,6 +1055,10 @@ class SpatialData:
             _is_subfolder,
             _resolve_zarr_store,
         )
+
+        # A store without a filesystem path has no directory for the checks below.
+        if isinstance(file_path, zarr.abc.store.Store):
+            return
 
         # Hierarchical URIs ("scheme://...") must become UPath: plain Path(str) breaks cloud URLs
         # (S3-compatible stores, Azure abfs:// / az://, GCS gs://, https://, fsspec chains, etc.).
@@ -1223,17 +1227,11 @@ class SpatialData:
 
         # Resolve all input forms (str / Path / StoreLike) to a path the internal per-element
         # write machinery can use. For zarr stores, derive a backing path via path_from_store;
-        # stores without a filesystem path (e.g. MemoryStore) are rejected here because the
-        # per-element machinery currently re-opens stores from the path.
+        # Use the path of a store that has one. The element writers take any other store as is.
         if isinstance(file_path, zarr.abc.store.Store):
             derived = path_from_store(file_path)
-            if derived is None:
-                raise NotImplementedError(
-                    f"Writing to a store of type {type(file_path).__name__} is not supported "
-                    "because it does not expose a filesystem path. Pass a LocalStore, FsspecStore, "
-                    "or a path/UPath instead."
-                )
-            file_path = derived
+            if derived is not None:
+                file_path = derived
         else:
             file_path = normalize_path(file_path)
         self._validate_can_safely_write_to_path(file_path, overwrite=overwrite)
@@ -1256,6 +1254,10 @@ class SpatialData:
                 raster_compressor=raster_compressor,
             )
 
+        if isinstance(file_path, zarr.abc.store.Store):
+            # There is no path to record, and consolidation re-opens the store by path.
+            return
+
         if self.path != file_path and update_sdata_path:
             self._path = file_path
 
@@ -1265,7 +1267,7 @@ class SpatialData:
     def _write_element(
         self,
         element: SpatialElement | AnnData,
-        zarr_container_path: Path | UPath,
+        zarr_container_path: Path | UPath | zarr.abc.store.Store,
         element_type: str,
         element_name: str,
         overwrite: bool,
@@ -1275,11 +1277,16 @@ class SpatialData:
     ) -> None:
         from spatialdata._io.io_zarr import _get_groups_for_element
 
-        if not isinstance(zarr_container_path, (Path, UPath)):
+        if not isinstance(zarr_container_path, (Path, UPath, zarr.abc.store.Store)):
             raise ValueError(
-                f"zarr_container_path must be a `Path` or `UPath` object, got {type(zarr_container_path).__name__}."
+                "zarr_container_path must be a `Path`, `UPath` or zarr store, "
+                f"got {type(zarr_container_path).__name__}."
             )
-        file_path_of_element = zarr_container_path / element_type / element_name
+        file_path_of_element = (
+            zarr_container_path / element_type / element_name
+            if isinstance(zarr_container_path, (Path, UPath))
+            else zarr_container_path
+        )
         self._validate_can_safely_write_to_path(
             file_path=file_path_of_element, overwrite=overwrite, saving_an_element=True
         )
