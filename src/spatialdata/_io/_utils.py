@@ -20,6 +20,7 @@ from anndata import AnnData
 from dask._task_spec import Task
 from dask.array import Array as DaskArray
 from dask.dataframe import DataFrame as DaskDataFrame
+from fsspec.implementations.local import LocalFileSystem
 from geopandas import GeoDataFrame
 from upath import UPath
 from upath.implementations.local import PosixUPath, WindowsUPath
@@ -442,8 +443,12 @@ def _search_for_backing_files_recursively(subgraph: Any, files: list[str]) -> No
                     #     combined with other arrays (see ``test_self_contained``).
                     # Any false-positive key that matches but carries no parquet payload is filtered
                     # inside ``_extract_parquet_paths_from_task`` (paths must ``endswith(".parquet")``).
+                    # Only a local path resolves against the working directory. A frame read through
+                    # another fsspec filesystem keeps the paths that filesystem names.
+                    fs = getattr(getattr(v, "func", None), "fs", None)
+                    local = fs is None or isinstance(fs, LocalFileSystem)
                     for parquet_file in _extract_parquet_paths_from_task(v):
-                        files.append(os.path.realpath(parquet_file))
+                        files.append(os.path.realpath(parquet_file) if local else parquet_file)
 
 
 def _backed_elements_contained_in_path(

@@ -5,9 +5,12 @@ import tempfile
 from contextlib import nullcontext
 
 import dask.dataframe as dd
+import fsspec
 import numpy as np
 import pandas as pd
 import pytest
+from fsspec.implementations.dirfs import DirFileSystem
+from fsspec.implementations.memory import MemoryFileSystem
 from upath import UPath
 
 from spatialdata import SpatialData, read_zarr
@@ -56,6 +59,26 @@ def test_backing_files_points(points):
             os.path.realpath(os.path.join(f, "points/points_0/points.parquet/part.0.parquet")) for f in [f0, f1]
         ]
         assert set(files) == set(expected_zarr_locations_legacy) or set(files) == set(expected_zarr_locations_new)
+
+
+def test_backing_files_keep_the_paths_of_another_filesystem(tmp_path):
+    """Backing files of a frame read through an fsspec filesystem keep that filesystem's paths."""
+    (tmp_path / "points/p/points.parquet").mkdir(parents=True)
+    pd.DataFrame({"x": [1.0, 2.0, 3.0]}).to_parquet(tmp_path / "points/p/points.parquet/part.0.parquet")
+    frame = dd.read_parquet(
+        "points/p/points.parquet", filesystem=DirFileSystem(path=str(tmp_path), fs=fsspec.filesystem("file"))
+    )
+    assert get_dask_backing_files(frame) == ["points/p/points.parquet/part.0.parquet"]
+
+
+def test_repr_counts_points_rows_through_the_frame_filesystem(points: SpatialData) -> None:
+    """The row count in the repr reads parquet metadata where the frame reads its data."""
+    upath = UPath("memory://repr.zarr", fs=MemoryFileSystem(skip_instance_cache=True))
+    points.write(upath, overwrite=True)
+
+    text = repr(SpatialData.read(upath))
+    for name, frame in points.points.items():
+        assert f"{name!r}: DataFrame with shape: ({len(frame)}, " in text, text
 
 
 def test_backing_files_images(images):

@@ -2080,7 +2080,10 @@ class SpatialData:
                     length: int | None = None
                     backing_files = get_dask_backing_files(v)
                     if backing_files:
-                        length = sum(pq.read_metadata(f).num_rows for f in backing_files)
+                        # Read through the frame's own filesystem: a remote or in-memory parquet
+                        # has no local path.
+                        filesystem = getattr(getattr(v, "expr", None), "filesystem", None)
+                        length = sum(pq.read_metadata(f, filesystem=filesystem).num_rows for f in backing_files)
 
                     n = len(get_axes_names(v))
                     dim_string = f"({n}D points)"
