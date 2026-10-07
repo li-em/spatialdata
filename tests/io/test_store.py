@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from pathlib import Path
 
@@ -215,3 +216,36 @@ def test_parquet_fs_fallback_is_not_called_for_a_local_store(tmp_path: Path) -> 
             assert path == str(tmp_path / "store.zarr" / "points" / "p1" / "points.parquet")
     finally:
         spatialdata._store.parquet_fs_fallback = None
+
+
+def _copy_store(source: LocalStore) -> MemoryStore:
+    """A MemoryStore that holds the same keys and bytes as `source`."""
+
+    async def copy() -> MemoryStore:
+        memory = MemoryStore()
+        prototype = zarr.core.buffer.default_buffer_prototype()
+        async for key in source.list():
+            await memory.set(key, await source.get(key, prototype=prototype))
+        return memory
+
+    return asyncio.run(copy())
+
+
+def test_read_rasters_from_a_store_without_a_path(images: SpatialData, tmp_path: Path) -> None:
+    """The raster reader reads the element group of a `MemoryStore`, not the container root."""
+    path = tmp_path / "images.zarr"
+    images.write(path)
+
+    read = SpatialData.read(_copy_store(LocalStore(str(path), read_only=True)))
+    assert_spatial_data_objects_are_identical(images, read)
+
+
+def test_read_table_from_a_store_without_a_path(full_sdata: SpatialData, tmp_path: Path) -> None:
+    """The table reader receives the table group, not the container root."""
+    path = tmp_path / "full.zarr"
+    full_sdata.write(path)
+
+    read = SpatialData.read(_copy_store(LocalStore(str(path), read_only=True)), selection=("tables",))
+    assert set(read.tables) == set(full_sdata.tables)
+    for name, table in read.tables.items():
+        assert table.shape == full_sdata.tables[name].shape

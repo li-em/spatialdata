@@ -84,8 +84,11 @@ def _read_zarr_group_spatialdata_element(
                         # consolidated-metadata cache would otherwise mask a corrupted or
                         # missing element-level ``zarr.json`` / ``.zattrs``. Re-open from the
                         # store so the corruption surfaces as OSError / JSONDecodeError.
-                        elem_group_fresh = open_zarr_for_read(
-                            store_from_group(elem_group, read_only=True), as_group=True
+                        # A fresh open of a store that store_from_group cannot re-root yields the
+                        # container root. Keep the element group.
+                        rerooted = store_from_group(elem_group, read_only=True)
+                        elem_group_fresh = (
+                            elem_group if rerooted is elem_group.store else open_zarr_for_read(rerooted, as_group=True)
                         )
                         element = read_func(elem_group_fresh)
                     else:

@@ -16,6 +16,7 @@ from ome_zarr.writer import write_labels as write_labels_ngff
 from ome_zarr.writer import write_multiscale as write_multiscale_ngff
 from ome_zarr.writer import write_multiscale_labels as write_multiscale_labels_ngff
 from xarray import DataArray, DataTree
+from zarr.storage import StorePath
 
 from spatialdata._io._utils import (
     _get_transformations_from_ngff_dict,
@@ -166,6 +167,9 @@ def _read_multiscale(
     # ome_zarr.io.ZarrLocation needs a store rooted at this group's location, not at the
     # SpatialData container root, so we re-root the parent store at ``group.path``.
     resolved_store = store_from_group(group, read_only=True)
+    if resolved_store is group.store:
+        # store_from_group cannot re-root this store. Name the group's prefix inside it instead.
+        resolved_store = StorePath(group.store, group.path)
 
     nodes: list[Node] = []
     image_loc = ZarrLocation(resolved_store, fmt=reader_format)
